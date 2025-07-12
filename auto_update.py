@@ -326,8 +326,15 @@ def graceful_restart_callback(args):
     os.kill(os.getpid(), signal.SIGINT)
     
     # Start restart thread with configurable timeout
-    restart_thread = threading.Thread(target=restart_after_shutdown, daemon=True)
+    restart_thread = threading.Thread(target=restart_after_shutdown, daemon=False)
     restart_thread.start()
+    
+    # Wait for the restart to happen instead of letting the process exit
+    try:
+        restart_thread.join()
+    except KeyboardInterrupt:
+        # If we get interrupted, just exit
+        pass
 
 # Original restart callback (kept for backward compatibility)
 def default_restart_callback(args):
