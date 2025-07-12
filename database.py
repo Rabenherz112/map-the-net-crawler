@@ -201,7 +201,15 @@ class DatabaseManager:
                 domain_data.get('tags')
             ))
             
-            domain_id = cursor.lastrowid
+            # If lastrowid is 0, it means the row already existed and was updated
+            # We need to fetch the actual ID
+            if cursor.lastrowid == 0:
+                cursor.execute("SELECT id FROM domains WHERE domain_name = %s", (domain_data.get('domain_name'),))
+                result = cursor.fetchone()
+                domain_id = result[0] if result else None
+            else:
+                domain_id = cursor.lastrowid
+            
             self.connection.commit()
             logger.info(f"Domain {domain_data.get('domain_name')} inserted/updated with ID: {domain_id}")
             return domain_id
@@ -272,23 +280,28 @@ class DatabaseManager:
                 cursor.close()
     
     def get_next_from_queue(self, limit=10):
-        """Get next URLs from discovery queue"""
+        """Get next URLs from discovery queue with atomic marking"""
         try:
             cursor = self.connection.cursor(dictionary=True)
             
-            query = """
+            # Start transaction
+            self.connection.start_transaction()
+            
+            # First, get the items we want to process
+            select_query = """
                 SELECT id, url, domain_name, source_domain_id, depth, priority
                 FROM discovery_queue 
                 WHERE status = 'pending'
                 ORDER BY priority DESC, discovered_at ASC
                 LIMIT %s
+                FOR UPDATE
             """
             
-            cursor.execute(query, (limit,))
+            cursor.execute(select_query, (limit,))
             results = cursor.fetchall()
             
-            # Mark as processing
             if results:
+                # Mark these specific items as processing
                 ids = [str(r['id']) for r in results]
                 update_query = f"""
                     UPDATE discovery_queue 
@@ -297,11 +310,14 @@ class DatabaseManager:
                 """
                 cursor.execute(update_query)
                 self.connection.commit()
-            
-            return results
+                return results
+            else:
+                self.connection.commit()
+                return []
             
         except Error as e:
             logger.error(f"Error getting from queue: {e}")
+            self.connection.rollback()
             return []
         finally:
             if cursor:

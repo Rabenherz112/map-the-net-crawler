@@ -113,6 +113,24 @@ class DomainCollector:
         # Compile regex patterns
         self.excluded_regex = [re.compile(pattern, re.IGNORECASE) for pattern in self.excluded_patterns]
     
+    def _should_exclude_domain(self, domain_name):
+        """Check if domain should be excluded based on domain patterns"""
+        try:
+            if not domain_name:
+                return True, "No domain name"
+            
+            # Check for excluded domain patterns
+            domain_lower = domain_name.lower()
+            for pattern in self.excluded_regex:
+                if pattern.search(domain_lower):
+                    return True, f"Excluded domain pattern: {pattern.pattern}"
+            
+            return False, None
+            
+        except Exception as e:
+            logger.warning(f"Error checking domain exclusion: {e}")
+            return True, f"Error checking domain: {e}"
+
     def _should_exclude_url(self, url, link_text):
         """Check if URL should be excluded based on various criteria"""
         try:
@@ -480,6 +498,11 @@ class DomainCollector:
             
             # Insert domain data
             domain_id = self.db.insert_domain(domain_data)
+            
+            # Validate domain_id before proceeding
+            if not domain_id:
+                logger.error(f"Failed to get domain ID for {domain_name}, skipping relationship collection")
+                return None, []
             
             # Collect relationships and discover new URLs
             relationships, discovered_urls = self._collect_relationships_and_discover(domain_name, domain_id, shutdown_check)
@@ -891,6 +914,11 @@ class DomainCollector:
         discovered_urls = []
         excluded_count = 0
         
+        # Validate source_domain_id
+        if not source_domain_id:
+            logger.error(f"Invalid source_domain_id for {domain_name}, skipping relationship collection")
+            return relationships, discovered_urls
+        
         try:
             # Check for shutdown
             if shutdown_check and shutdown_check():
@@ -1018,12 +1046,23 @@ class DomainCollector:
                     logger.info(f"Skipping internal {target_domain} - already processed {domain_processing_count} URLs")
                     continue
                 
+                # Check if domain should be excluded
+                should_exclude_domain, reason = self._should_exclude_domain(target_domain)
+                if should_exclude_domain:
+                    logger.debug(f"Skipping excluded domain {target_domain}: {reason}")
+                    continue
+                
                 # Get or create target domain ID
                 target_domain_id = self.db.get_domain_id(target_domain)
                 if not target_domain_id:
                     minimal_data = {'domain_name': target_domain}
                     target_domain_id = self.db.insert_domain(minimal_data)
                 
+                # Validate target_domain_id
+                if not target_domain_id:
+                    logger.warning(f"Failed to get/create target domain ID for {target_domain}, skipping relationship")
+                    continue
+
                 # --- Relationship Type Detection ---
                 rel_type = 'link'
                 ext_source = tldextract.extract(domain_name)
@@ -1058,6 +1097,12 @@ class DomainCollector:
                                 not protocol_only
                             ):
                                 rel_type = 'redirect'
+                                # Check if redirect domain should be excluded
+                                should_exclude_redirect_domain, reason = self._should_exclude_domain(final_domain)
+                                if should_exclude_redirect_domain:
+                                    logger.debug(f"Skipping excluded redirect domain {final_domain}: {reason}")
+                                    continue
+                                
                                 # Insert redirect relationship
                                 final_domain_id = self.db.get_domain_id(final_domain)
                                 if not final_domain_id:
@@ -1136,12 +1181,23 @@ class DomainCollector:
                     logger.info(f"Skipping external {target_domain} - already processed {domain_processing_count} URLs")
                     continue
                 
+                # Check if domain should be excluded
+                should_exclude_domain, reason = self._should_exclude_domain(target_domain)
+                if should_exclude_domain:
+                    logger.debug(f"Skipping excluded domain {target_domain}: {reason}")
+                    continue
+                
                 # Get or create target domain ID
                 target_domain_id = self.db.get_domain_id(target_domain)
                 if not target_domain_id:
                     minimal_data = {'domain_name': target_domain}
                     target_domain_id = self.db.insert_domain(minimal_data)
                 
+                # Validate target_domain_id
+                if not target_domain_id:
+                    logger.warning(f"Failed to get/create target domain ID for {target_domain}, skipping relationship")
+                    continue
+
                 # --- Relationship Type Detection ---
                 rel_type = 'link'
                 ext_source = tldextract.extract(domain_name)
@@ -1173,6 +1229,12 @@ class DomainCollector:
                                 not protocol_only
                             ):
                                 rel_type = 'redirect'
+                                # Check if redirect domain should be excluded
+                                should_exclude_redirect_domain, reason = self._should_exclude_domain(final_domain)
+                                if should_exclude_redirect_domain:
+                                    logger.debug(f"Skipping excluded redirect domain {final_domain}: {reason}")
+                                    continue
+                                
                                 final_domain_id = self.db.get_domain_id(final_domain)
                                 if not final_domain_id:
                                     minimal_data = {'domain_name': final_domain}
