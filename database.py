@@ -329,6 +329,48 @@ class DatabaseManager:
             if cursor:
                 cursor.close()
     
+    def mark_queue_item_skipped(self, queue_id, reason=None):
+        """Mark queue item as skipped (for business logic reasons)"""
+        try:
+            cursor = self.connection.cursor()
+            
+            query = """
+                UPDATE discovery_queue 
+                SET status = 'skipped', processed_at = CURRENT_TIMESTAMP, error_message = %s
+                WHERE id = %s
+            """
+            
+            cursor.execute(query, (reason, queue_id))
+            self.connection.commit()
+            
+        except Error as e:
+            logger.error(f"Error marking queue item as skipped: {e}")
+            self.connection.rollback()
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def mark_queue_item_interrupted(self, queue_id, reason="Processing interrupted"):
+        """Mark queue item as interrupted (for external interruptions)"""
+        try:
+            cursor = self.connection.cursor()
+            
+            query = """
+                UPDATE discovery_queue 
+                SET status = 'pending', processed_at = NULL, error_message = %s
+                WHERE id = %s
+            """
+            
+            cursor.execute(query, (reason, queue_id))
+            self.connection.commit()
+            
+        except Error as e:
+            logger.error(f"Error marking queue item as interrupted: {e}")
+            self.connection.rollback()
+        finally:
+            if cursor:
+                cursor.close()
+    
     def is_url_in_queue(self, url, exclude_id=None):
         """Check if URL is already in the discovery queue"""
         try:

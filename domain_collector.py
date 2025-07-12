@@ -105,9 +105,9 @@ class DomainCollector:
             # Common search and filter paths
             r'/search', r'/filter', r'/sort', r'/page',
             # Common utility paths
-            r'/contact', r'/about', r'/privacy', r'/terms', r'/help'
-            # Exlude Website UGC
-            r'\.itch\.io', r'\.github\.io'
+            r'/contact', r'/about', r'/privacy', r'/terms', r'/help',
+            # Exclude Website UGC subdomains (but not main domains)
+            r'^[^.]+\.itch\.io$', r'^[^.]+\.github\.io$'
         ]
         
         # Compile regex patterns
@@ -1297,20 +1297,20 @@ class DomainCollector:
                         # Skip if we've reached max depth
                         if depth >= max_depth:
                             logger.info(f"Skipping {domain_name} - reached max depth")
-                            self.db.mark_queue_item_completed(item['id'], success=False, error_message="Max depth reached")
+                            self.db.mark_queue_item_skipped(item['id'], "Max depth reached")
                             continue
                         
                         # Check if URL is already in queue (better than checking if processed)
                         if self.db.is_url_in_queue(url, exclude_id=item['id']):
                             logger.info(f"URL {url} already in queue, skipping")
-                            self.db.mark_queue_item_completed(item['id'], success=False, error_message="Already in queue")
+                            self.db.mark_queue_item_skipped(item['id'], "Already in queue")
                             continue
                         
                         # Check domain processing limit
                         domain_processing_count = self.db.get_domain_processing_count(domain_name)
                         if domain_processing_count >= COLLECTION_CONFIG['max_urls_per_domain']:
                             logger.info(f"Skipping {domain_name} - reached processing limit ({domain_processing_count})")
-                            self.db.mark_queue_item_completed(item['id'], success=False, error_message="Domain processing limit reached")
+                            self.db.mark_queue_item_skipped(item['id'], "Domain processing limit reached")
                             continue
                         
                         # Collect domain data
@@ -1328,17 +1328,17 @@ class DomainCollector:
                         
         except KeyboardInterrupt:
             logger.info("Queue processing interrupted by user")
-            # Mark any remaining processing items as failed
+            # Mark any remaining processing items as interrupted (reset to pending)
             try:
                 cursor = self.db.connection.cursor()
                 cursor.execute("""
                     UPDATE discovery_queue 
-                    SET status = 'failed', error_message = 'Processing interrupted'
+                    SET status = 'pending', processed_at = NULL, error_message = 'Processing interrupted'
                     WHERE status = 'processing'
                 """)
                 self.db.connection.commit()
                 cursor.close()
-                logger.info("Marked interrupted queue items as failed")
+                logger.info("Marked interrupted queue items as pending for retry")
             except Exception as e:
                 logger.error(f"Error marking interrupted items: {e}")
         except Exception as e:

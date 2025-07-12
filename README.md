@@ -147,6 +147,60 @@ python wipe_database.py --force
 **Options:**
 - `--force`: Required flag to confirm database wipe
 
+**`cleanup_ugc_domains.py`** - Remove itch.io and github.io subdomains from database:
+
+```bash
+# Show statistics only
+python cleanup_ugc_domains.py --stats-only
+
+# See what would be cleaned up (dry run)
+python cleanup_ugc_domains.py --dry-run
+
+# Clean up UGC domains (requires confirmation)
+python cleanup_ugc_domains.py
+
+# Force cleanup without confirmation
+python cleanup_ugc_domains.py --force
+```
+
+**Options:**
+- `--stats-only`: Only show statistics without cleaning up
+- `--dry-run`: Show what would be done without making changes
+- `--force`: Force cleanup without confirmation (use with caution)
+
+**`archive_collection_logs.py`** - Archive old collection logs to manage database size:
+
+```bash
+# Show log statistics only
+python archive_collection_logs.py --stats-only
+
+# See what would be archived (dry run)
+python archive_collection_logs.py --dry-run --days 30
+
+# Archive logs older than 30 days (with CSV export)
+python archive_collection_logs.py --days 30
+
+# Archive only failed logs older than 7 days
+python archive_collection_logs.py --status failed --days 7
+
+# Archive without CSV export
+python archive_collection_logs.py --no-export --days 60
+
+# Force archiving without confirmation
+python archive_collection_logs.py --force --days 30
+```
+
+**Options:**
+- `--days N`: Archive logs older than N days (default: 30)
+- `--status STATUS`: Only archive logs with specific status (pending/processing/completed/failed)
+- `--dry-run`: Show what would be done without making changes
+- `--stats-only`: Only show statistics without archiving
+- `--no-export`: Skip CSV export of archived logs
+- `--force`: Force archiving without confirmation (use with caution)
+
+**CSV Export Location:**
+Archived logs are exported to `resources/collection_logs_archive/` with timestamped filenames like `collection_logs_archive_20240115_143022.csv`.
+
 ### Configuration
 
 Create a `.env` file or copy it from `env_example.txt` and set the following variables:
