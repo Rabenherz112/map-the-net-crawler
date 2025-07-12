@@ -24,6 +24,9 @@ ORIGINAL_CWD = os.getcwd()
 ORIGINAL_SCRIPT = os.path.abspath(sys.argv[0])
 ORIGINAL_ARGS = sys.argv[1:]
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Create filtered args that exclude --add-seeds for restarts
 def get_restart_args():
     """Get arguments for restart, excluding --add-seeds"""
@@ -43,7 +46,6 @@ class AutoUpdate:
         self.config = config
         self.current_version = current_version
         self.restart_callback = restart_callback
-        self.logger = logging.getLogger("AutoUpdate")
         self._stop_event = threading.Event()
 
     def start_periodic_check(self):
@@ -59,7 +61,7 @@ class AutoUpdate:
             try:
                 self.check_for_update()
             except Exception as e:
-                self.logger.error(f"Auto-update check failed: {e}")
+                logger.error(f"Auto-update check failed: {e}")
             self._stop_event.wait(interval)
 
     def stop(self):
@@ -70,7 +72,7 @@ class AutoUpdate:
         Check if an update is available and apply it if so.
         """
         if not self.config.get('enabled', True):
-            self.logger.debug("Auto-update is disabled.")
+            logger.debug("Auto-update is disabled.")
             return
         if self._is_git_repo():
             self._check_git_update()
@@ -81,12 +83,12 @@ class AutoUpdate:
         return os.path.isdir('.git')
 
     def _check_git_update(self):
-        self.logger.info("Checking for git updates...")
+        logger.info("Checking for git updates...")
         try:
             # Check for local changes
             status = subprocess.check_output(['git', 'status', '--porcelain']).decode().strip()
             if status:
-                self.logger.warning("Auto-update skipped: local changes detected. Please commit, stash, or discard changes to enable auto-update.")
+                logger.warning("Auto-update skipped: local changes detected. Please commit, stash, or discard changes to enable auto-update.")
                 return
             # Fetch remote
             fetch_cmd = ['git', 'fetch']
@@ -97,7 +99,7 @@ class AutoUpdate:
             if token:
                 # Get current remote URL
                 original_url = subprocess.check_output(['git', 'remote', 'get-url', remote_name]).decode().strip()
-                self.logger.info(f"Original remote URL: {original_url}")
+                logger.info(f"Original remote URL: {original_url}")
                 # Insert token into URL
                 if original_url.startswith('https://'):
                     url_parts = original_url.split('https://', 1)[1]
@@ -106,40 +108,40 @@ class AutoUpdate:
                     token_url = f'https://{token}@{url_parts}'
                     # Set remote URL with token
                     subprocess.run(['git', 'remote', 'set-url', remote_name, token_url], check=True)
-                    self.logger.info("Set remote URL with token for private repo fetch.")
+                    logger.info("Set remote URL with token for private repo fetch.")
             try:
                 subprocess.run(fetch_cmd, check=True)
                 # Compare local and remote HEAD
                 local = subprocess.check_output(['git', 'rev-parse', 'HEAD']).strip()
                 remote = subprocess.check_output(['git', 'rev-parse', '@{u}']).strip()
                 if local != remote:
-                    self.logger.info("Update available via git. Applying update...")
+                    logger.info("Update available via git. Applying update...")
                     subprocess.run(pull_cmd, check=True)
-                    self.logger.info("Update pulled. Restarting...")
+                    logger.info("Update pulled. Restarting...")
                     self._restart()
                 else:
-                    self.logger.info("No git update available.")
+                    logger.info("No git update available.")
             finally:
                 # Restore original remote URL if it was changed
                 if token and original_url:
                     subprocess.run(['git', 'remote', 'set-url', remote_name, original_url], check=True)
-                    self.logger.info("Restored original remote URL after fetch.")
+                    logger.info("Restored original remote URL after fetch.")
         except Exception as e:
-            self.logger.error(f"Git update check failed: {e}")
+            logger.error(f"Git update check failed: {e}")
 
     def _apply_git_update(self):
         try:
             subprocess.run(['git', 'pull'], check=True)
-            self.logger.info("Update pulled. Restarting...")
+            logger.info("Update pulled. Restarting...")
             self._restart()
         except Exception as e:
-            self.logger.error(f"Failed to apply git update: {e}")
+            logger.error(f"Failed to apply git update: {e}")
 
     def _check_github_release_update(self):
-        self.logger.info("Checking for GitHub release updates...")
+        logger.info("Checking for GitHub release updates...")
         repo_url = self.config.get('repo_url')
         if not repo_url or 'github.com' not in repo_url:
-            self.logger.warning("Release update only supported for GitHub repos.")
+            logger.warning("Release update only supported for GitHub repos.")
             return
         repo_path = repo_url.split('github.com/')[-1].replace('.git', '')
         headers = {}
@@ -151,11 +153,11 @@ class AutoUpdate:
             api_url = f'https://api.github.com/repos/{repo_path}/releases'
             resp = requests.get(api_url, headers=headers, timeout=10)
             if resp.status_code != 200:
-                self.logger.warning(f"Failed to fetch releases: {resp.status_code}")
+                logger.warning(f"Failed to fetch releases: {resp.status_code}")
                 return
             releases = resp.json()
             if not releases:
-                self.logger.info("No releases found.")
+                logger.info("No releases found.")
                 return
             # Pick the latest release (by published_at)
             releases = sorted(releases, key=lambda r: r.get('published_at', ''), reverse=True)
@@ -165,7 +167,7 @@ class AutoUpdate:
             api_url = f'https://api.github.com/repos/{repo_path}/releases/latest'
             resp = requests.get(api_url, headers=headers, timeout=10)
             if resp.status_code != 200:
-                self.logger.warning(f"Failed to fetch releases: {resp.status_code}")
+                logger.warning(f"Failed to fetch releases: {resp.status_code}")
                 return
             release = resp.json()
         release_name = release.get('name', '')
@@ -173,13 +175,13 @@ class AutoUpdate:
         keywords = self.config.get('release_keywords', [])
         if self.config.get('only_on_release', False):
             if not any(kw in release_name for kw in keywords) and keywords:
-                self.logger.info(f"Latest release '{release_name}' does not match keywords {keywords}. Skipping update.")
+                logger.info(f"Latest release '{release_name}' does not match keywords {keywords}. Skipping update.")
                 return
         # Compare version (normalize v prefix)
         def _normalize_version(ver):
             return ver.lstrip('vV') if ver else ''
         if release_tag and _normalize_version(release_tag) != _normalize_version(self.current_version):
-            self.logger.info(f"Update available via release: {release_tag}. Applying update...")
+            logger.info(f"Update available via release: {release_tag}. Applying update...")
             assets = release.get('assets', [])
             asset_url = None
             for asset in assets:
@@ -194,34 +196,34 @@ class AutoUpdate:
             if not asset_url:
                 asset_url = release.get('zipball_url') or release.get('tarball_url')
                 if asset_url:
-                    self.logger.info("No uploaded asset found, using zipball/tarball from GitHub release.")
+                    logger.info("No uploaded asset found, using zipball/tarball from GitHub release.")
             if not asset_url:
-                self.logger.warning("No suitable release asset (.zip, .tar.gz, or zipball/tarball) found. Skipping update.")
+                logger.warning("No suitable release asset (.zip, .tar.gz, or zipball/tarball) found. Skipping update.")
                 return
             try:
-                self.logger.info(f"Downloading release asset: {asset_url}")
+                logger.info(f"Downloading release asset: {asset_url}")
                 with requests.get(asset_url, stream=True, headers=headers, timeout=30) as r:
                     r.raise_for_status()
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_file:
                         for chunk in r.iter_content(chunk_size=8192):
                             tmp_file.write(chunk)
                         tmp_path = tmp_file.name
-                self.logger.info(f"Extracting asset {tmp_path} to a temporary directory...")
+                logger.info(f"Extracting asset {tmp_path} to a temporary directory...")
                 with tempfile.TemporaryDirectory() as tmpdir:
                     with zipfile.ZipFile(tmp_path, 'r') as zip_ref:
                         zip_ref.extractall(tmpdir)
                     # Find the extracted subdirectory (should be only one)
                     extracted_dirs = [os.path.join(tmpdir, d) for d in os.listdir(tmpdir) if os.path.isdir(os.path.join(tmpdir, d))]
                     if not extracted_dirs:
-                        self.logger.error("No directory found in extracted zipball. Update aborted.")
+                        logger.error("No directory found in extracted zipball. Update aborted.")
                         return
                     extracted_root = extracted_dirs[0]
                     # Always sync to the project root (parent of src)
                     sync_target = get_project_root()
-                    self.logger.info(f"Syncing files from {extracted_root} to {sync_target} (protected: {PROTECTED_FILES})...")
+                    logger.info(f"Syncing files from {extracted_root} to {sync_target} (protected: {PROTECTED_FILES})...")
                     for item in os.listdir(extracted_root):
                         if item in PROTECTED_FILES:
-                            self.logger.info(f"Skipping protected file/folder: {item}")
+                            logger.info(f"Skipping protected file/folder: {item}")
                             continue
                         s = os.path.join(extracted_root, item)
                         d = os.path.join(sync_target, item)
@@ -231,19 +233,19 @@ class AutoUpdate:
                             shutil.copytree(s, d)
                         else:
                             shutil.copy2(s, d)
-                    self.logger.info(f"Update files copied to {sync_target}.")
+                    logger.info(f"Update files copied to {sync_target}.")
                 os.remove(tmp_path)
-                self.logger.info("Update applied from release asset. Restarting...")
+                logger.info("Update applied from release asset. Restarting...")
                 self._restart()
             except Exception as e:
-                self.logger.error(f"Failed to download or extract release asset: {e}")
+                logger.error(f"Failed to download or extract release asset: {e}")
         else:
-            self.logger.info("No release update available.")
+            logger.info("No release update available.")
 
     def _restart(self):
         # Soft shutdown and restart with same args, excluding --add-seeds
         args = [a for a in sys.argv if not a.startswith('--add-seeds')]
-        self.logger.info(f"Restarting with args: {args}")
+        logger.info(f"Restarting with args: {args}")
         # Flush logs, cleanup, etc. if needed
         self.restart_callback(args)
 
@@ -268,34 +270,34 @@ def graceful_restart_callback(args):
         # Wait for shutdown to complete with a configurable timeout
         # Default: 120 seconds (2 minutes) for very long operations
         shutdown_timeout = int(os.getenv('AUTO_UPDATE_SHUTDOWN_TIMEOUT', '120'))
-        print(f"[AutoUpdate] Waiting {shutdown_timeout} seconds for graceful shutdown...")
+        logger.info(f"Waiting {shutdown_timeout} seconds for graceful shutdown...")
         
         time.sleep(shutdown_timeout)
         
         if restart_mode.is_set():
-            print("[AutoUpdate] Graceful shutdown period completed, restarting...")
+            logger.info("Graceful shutdown period completed, restarting...")
             restart_args = get_restart_args()
-            print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={restart_args}")
+            logger.info(f"Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={restart_args}")
             os.chdir(ORIGINAL_CWD)
             cmd = [sys.executable, ORIGINAL_SCRIPT] + restart_args
             # Use subprocess to restart in the same terminal session
             # This preserves the terminal session and shows the script output
             try:
                 process = subprocess.Popen(cmd, cwd=ORIGINAL_CWD)
-                print(f"[AutoUpdate] Restarted script with PID: {process.pid}")
+                logger.info(f"Restarted script with PID: {process.pid}")
                 # Exit the current process after a short delay to ensure the new process starts
                 time.sleep(1)
                 os._exit(0)
                 
             except Exception as e:
-                print(f"[AutoUpdate] Failed to restart script: {e}")
+                logger.error(f"Failed to restart script: {e}")
                 # Fallback to execv if subprocess fails
                 os.execv(sys.executable, cmd)
     
     def cleanup_on_exit():
         """Called when the process is about to exit"""
         if restart_mode.is_set():
-            print("[AutoUpdate] Process exiting, restart will be handled by background thread")
+            logger.info("Process exiting, restart will be handled by background thread")
             
             # Clean up any stuck processing items for this agent
             try:
@@ -309,11 +311,11 @@ def graceful_restart_callback(args):
                 # Clean up items stuck in processing for more than 60 minutes
                 cleaned_count = db.cleanup_agent_processing_items(agent_name, timeout_minutes=60)
                 if cleaned_count > 0:
-                    print(f"[AutoUpdate] Cleaned up {cleaned_count} stuck processing items for agent {agent_name}")
+                    logger.info(f"Cleaned up {cleaned_count} stuck processing items for agent {agent_name}")
                 
                 db.close()
             except Exception as e:
-                print(f"[AutoUpdate] Error during cleanup: {e}")
+                logger.error(f"Error during cleanup: {e}")
     
     # Register cleanup function
     atexit.register(cleanup_on_exit)
@@ -322,7 +324,7 @@ def graceful_restart_callback(args):
     restart_mode.set()
     
     # Send SIGINT to trigger graceful shutdown (same as Ctrl+C)
-    print("[AutoUpdate] Triggering graceful shutdown for restart...")
+    logger.info("Triggering graceful shutdown for restart...")
     os.kill(os.getpid(), signal.SIGINT)
     
     # Start restart thread with configurable timeout
@@ -345,7 +347,7 @@ def default_restart_callback(args):
     import time
     
     restart_args = get_restart_args()
-    print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={restart_args}")
+    logger.info(f"Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={restart_args}")
     os.chdir(ORIGINAL_CWD)
     
     # Build the command to restart the script
@@ -355,14 +357,14 @@ def default_restart_callback(args):
     try:
         # Start the new process
         process = subprocess.Popen(cmd, cwd=ORIGINAL_CWD)
-        print(f"[AutoUpdate] Restarted script with PID: {process.pid}")
+        logger.info(f"Restarted script with PID: {process.pid}")
         
         # Exit the current process after a short delay to ensure the new process starts
         time.sleep(1)
         os._exit(0)  # Force exit without running atexit handlers
         
     except Exception as e:
-        print(f"[AutoUpdate] Failed to restart script: {e}")
+        logger.error(f"Failed to restart script: {e}")
         # Fallback to execv if subprocess fails
         os.execv(sys.executable, cmd)
 
