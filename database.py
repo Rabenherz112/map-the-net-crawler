@@ -16,7 +16,21 @@ class DatabaseManager:
     def connect(self):
         """Establish database connection"""
         try:
-            self.connection = mysql.connector.connect(**DB_CONFIG)
+            # Add connection pool settings for better multi-process handling
+            connection_config = DB_CONFIG.copy()
+            connection_config.update({
+                'pool_name': 'crawler_pool',
+                'pool_size': 5,
+                'pool_reset_session': True,
+                'autocommit': False,
+                'charset': 'utf8mb4',
+                'use_unicode': True,
+                'get_warnings': True,
+                'raise_on_warnings': False,
+                'connection_timeout': 60,
+            })
+            
+            self.connection = mysql.connector.connect(**connection_config)
             logger.info("Database connection established successfully")
         except Error as e:
             logger.error(f"Error connecting to MySQL: {e}")
@@ -26,6 +40,10 @@ class DatabaseManager:
         """Create necessary tables if they don't exist"""
         try:
             cursor = self.connection.cursor()
+            
+            # Suppress warnings for table creation (tables may already exist)
+            cursor.execute("SET SESSION sql_notes = 0")
+            cursor.execute("SET SESSION sql_warnings = 0")
             
             # Domains table with enhanced fields
             cursor.execute("""
@@ -136,6 +154,10 @@ class DatabaseManager:
             
             self.connection.commit()
             logger.info("Database tables created successfully")
+            
+            # Restore warning settings
+            cursor.execute("SET SESSION sql_notes = 1")
+            cursor.execute("SET SESSION sql_warnings = 1")
             
         except Error as e:
             logger.error(f"Error creating tables: {e}")
@@ -281,47 +303,80 @@ class DatabaseManager:
     
     def get_next_from_queue(self, limit=10):
         """Get next URLs from discovery queue with atomic marking"""
-        try:
-            cursor = self.connection.cursor(dictionary=True)
-            
-            # Start transaction
-            self.connection.start_transaction()
-            
-            # First, get the items we want to process
-            select_query = """
-                SELECT id, url, domain_name, source_domain_id, depth, priority
-                FROM discovery_queue 
-                WHERE status = 'pending'
-                ORDER BY priority DESC, discovered_at ASC
-                LIMIT %s
-                FOR UPDATE
-            """
-            
-            cursor.execute(select_query, (limit,))
-            results = cursor.fetchall()
-            
-            if results:
-                # Mark these specific items as processing
-                ids = [str(r['id']) for r in results]
-                update_query = f"""
-                    UPDATE discovery_queue 
-                    SET status = 'processing', processed_at = CURRENT_TIMESTAMP
-                    WHERE id IN ({','.join(ids)})
+        cursor = None
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                # Ensure connection is active
+                if not self.ensure_connection():
+                    logger.error("Cannot establish database connection")
+                    return []
+                
+                # Ensure no active transaction before starting
+                if self.connection.in_transaction:
+                    logger.warning("Transaction already in progress, rolling back")
+                    self.connection.rollback()
+                
+                cursor = self.connection.cursor(dictionary=True)
+                
+                # Start transaction
+                self.connection.start_transaction()
+                
+                # First, get the items we want to process
+                select_query = """
+                    SELECT id, url, domain_name, source_domain_id, depth, priority
+                    FROM discovery_queue 
+                    WHERE status = 'pending'
+                    ORDER BY priority DESC, discovered_at ASC
+                    LIMIT %s
+                    FOR UPDATE
                 """
-                cursor.execute(update_query)
-                self.connection.commit()
-                return results
-            else:
-                self.connection.commit()
-                return []
-            
-        except Error as e:
-            logger.error(f"Error getting from queue: {e}")
-            self.connection.rollback()
-            return []
-        finally:
-            if cursor:
-                cursor.close()
+                
+                cursor.execute(select_query, (limit,))
+                results = cursor.fetchall()
+                
+                if results:
+                    # Mark these specific items as processing
+                    ids = [str(r['id']) for r in results]
+                    update_query = f"""
+                        UPDATE discovery_queue 
+                        SET status = 'processing', processed_at = CURRENT_TIMESTAMP
+                        WHERE id IN ({','.join(ids)})
+                    """
+                    cursor.execute(update_query)
+                    self.connection.commit()
+                    return results
+                else:
+                    self.connection.commit()
+                    return []
+                
+            except Error as e:
+                retry_count += 1
+                logger.warning(f"Error getting from queue (attempt {retry_count}/{max_retries}): {e}")
+                
+                # Clean up transaction state
+                if self.connection.in_transaction:
+                    try:
+                        self.connection.rollback()
+                    except:
+                        pass
+                
+                # If this is the last retry, log as error and return empty
+                if retry_count >= max_retries:
+                    logger.error(f"Failed to get from queue after {max_retries} attempts: {e}")
+                    return []
+                
+                # Wait a bit before retrying
+                import time
+                time.sleep(0.1 * retry_count)  # Exponential backoff
+                
+            finally:
+                if cursor:
+                    cursor.close()
+        
+        return []
     
     def mark_queue_item_completed(self, queue_id, success=True, error_message=None):
         """Mark queue item as completed or failed"""
@@ -600,5 +655,36 @@ class DatabaseManager:
     def close(self):
         """Close database connection"""
         if self.connection and self.connection.is_connected():
-            self.connection.close()
-            logger.info("Database connection closed") 
+            try:
+                # Rollback any active transaction before closing
+                if self.connection.in_transaction:
+                    logger.warning("Rolling back active transaction before closing")
+                    self.connection.rollback()
+                self.connection.close()
+                logger.info("Database connection closed")
+            except Error as e:
+                logger.error(f"Error closing database connection: {e}")
+    
+    def cleanup_stuck_transactions(self):
+        """Clean up any stuck transactions"""
+        try:
+            if self.connection and self.connection.in_transaction:
+                logger.warning("Cleaning up stuck transaction")
+                self.connection.rollback()
+                return True
+            return False
+        except Error as e:
+            logger.error(f"Error cleaning up stuck transaction: {e}")
+            return False
+    
+    def ensure_connection(self):
+        """Ensure database connection is active and reconnect if needed"""
+        try:
+            if not self.connection or not self.connection.is_connected():
+                logger.warning("Database connection lost, reconnecting...")
+                self.connect()
+                return True
+            return True
+        except Error as e:
+            logger.error(f"Error ensuring database connection: {e}")
+            return False 

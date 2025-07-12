@@ -26,9 +26,19 @@ logger = logging.getLogger(__name__)
 class DomainCollector:
     def __init__(self):
         """Initialize the domain collector"""
+        import os
+        import socket
+        
+        # Generate a unique process identifier
+        self.process_id = f"{socket.gethostname()}-{os.getpid()}"
+        
         self.db = DatabaseManager()
         self.db.connect()
         self.db.create_tables()
+        # Clean up any stuck transactions on startup
+        self.db.cleanup_stuck_transactions()
+        
+        logger.info(f"DomainCollector initialized with process ID: {self.process_id}")
         
         # Initialize requests session with proper headers
         self.session = requests.Session()
@@ -1343,6 +1353,9 @@ class DomainCollector:
         """Process URLs from the discovery queue with enhanced safeguards and shutdown support"""
         logger.info("Starting queue processing...")
         
+        # Clean up any stuck transactions before starting
+        self.db.cleanup_stuck_transactions()
+        
         try:
             while True:
                 # Check for shutdown
@@ -1357,7 +1370,7 @@ class DomainCollector:
                     logger.info("Queue is empty, stopping processing")
                     break
                 
-                logger.info(f"Processing {len(queue_items)} items from queue")
+                logger.info(f"Process {self.process_id}: Processing {len(queue_items)} items from queue")
                 
                 for item in queue_items:
                     # Check for shutdown before each item
@@ -1404,6 +1417,8 @@ class DomainCollector:
                         
         except KeyboardInterrupt:
             logger.info("Queue processing interrupted by user")
+            # Clean up any stuck transactions
+            self.db.cleanup_stuck_transactions()
             # Mark any remaining processing items as interrupted (reset to pending)
             try:
                 cursor = self.db.connection.cursor()
@@ -1419,6 +1434,8 @@ class DomainCollector:
                 logger.error(f"Error marking interrupted items: {e}")
         except Exception as e:
             logger.error(f"Queue processing failed: {e}")
+            # Clean up any stuck transactions
+            self.db.cleanup_stuck_transactions()
     
     def crawl_from_seed_domains(self, seed_domains, max_depth=2):
         """Crawl domains starting from seed domains"""
