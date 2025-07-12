@@ -108,13 +108,96 @@ python3 wipe_database.py --force
 python3 test_improvements.py
 ```
 
-### Configuration Data Crawler
+### Utility Tools
+
+The crawler includes several utility tools for maintenance and troubleshooting:
+
+#### Queue Management
+
+**`cleanup_stuck_queue.py`** - Clean up URLs stuck in "processing" status:
+
+```bash
+# Show current queue statistics
+python cleanup_stuck_queue.py --stats-only
+
+# See what would be cleaned up (dry run)
+python cleanup_stuck_queue.py --dry-run --timeout 30
+
+# Clean up items stuck for more than 30 minutes
+python cleanup_stuck_queue.py --timeout 30
+
+# Clean up items stuck for more than 10 minutes (more aggressive)
+python cleanup_stuck_queue.py --timeout 10
+```
+
+**Options:**
+- `--timeout MINUTES`: Items stuck longer than this will be reset (default: 30)
+- `--dry-run`: Show what would be done without making changes
+- `--stats-only`: Only show queue statistics without cleaning up
+
+#### Database Management
+
+**`wipe_database.py`** - Completely wipe the database (use with caution):
+
+```bash
+# Wipe database (requires --force flag)
+python wipe_database.py --force
+```
+
+**Options:**
+- `--force`: Required flag to confirm database wipe
+
+### Configuration
 
 Create a `.env` file or copy it from `env_example.txt` and set the following variables:
 
+#### Database Configuration
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `DB_HOST` | MySQL host address | `localhost` |
+| `DB_PORT` | MySQL port | `3306` |
+| `DB_NAME` | Database name | `map_the_net` |
+| `DB_USER` | Database username | `your_username` |
+| `DB_PASSWORD` | Database password | `your_password` |
 
+#### Collection Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COLLECTION_TIMEOUT` | Request timeout in seconds | `30` |
+| `COLLECTION_REQUEST_DELAY` | Delay between requests in seconds | `1` |
+| `COLLECTION_MAX_LINKS_PER_PAGE` | Maximum links to extract per page | `50` |
+| `COLLECTION_MAX_URLS_PER_DOMAIN` | Maximum URLs to process per domain | `10` |
+| `COLLECTION_MAX_DEPTH` | Maximum crawl depth | `3` |
+| `COLLECTION_MAX_ITEMS` | Maximum items to process per batch | `10` |
+| `COLLECTION_SKIP_ALREADY_PROCESSED` | Skip already processed URLs | `true` |
+| `COLLECTION_HTTP_USER_AGENT` | HTTP User-Agent string | `WorldMapper/1.0` |
+| `COLLECTION_INTERNAL_AGENT_NAME` | Internal agent identifier | `hostname-pid` |
+| `COLLECTION_RESPECT_ROBOTS_TXT` | Respect robots.txt | `true` |
+| `COLLECTION_PARALLEL_WORKERS` | Number of parallel workers | `1` |
+
+#### Data Collection Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DATA_COLLECT_WHOIS` | Collect WHOIS data | `true` |
+| `DATA_COLLECT_SSL` | Collect SSL certificate data | `true` |
+| `DATA_COLLECT_GEOLOCATION` | Collect geolocation data | `true` |
+| `DATA_COLLECT_SCREENSHOTS` | Take screenshots | `false` |
+| `DATA_COLLECT_IPINFO_FALLBACK` | Use ipinfo.io fallback for geolocation | `true` |
+| `DATA_COLLECT_IPINFO_TOKEN` | ipinfo.io API token (optional) | `` |
+| `MAXMIND_DB_PATH` | Path to MaxMind GeoLite2 database | `./GeoLite2-City.mmdb` |
+| `SCREENSHOT_DIR` | Screenshot storage directory | `./resources/screenshots` |
+
+#### Auto-Update Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AUTO_UPDATE_ENABLED` | Enable auto-update | `true` |
+| `AUTO_UPDATE_REPO_URL` | Repository URL for updates | `https://github.com/Rabenherz112/map-the-net-crawler.git` |
+| `AUTO_UPDATE_CHECK_INTERVAL` | Update check interval in seconds | `21600` (6h) |
+| `AUTO_UPDATE_ONLY_ON_RELEASE` | Only update on releases | `false` |
+| `AUTO_UPDATE_RELEASE_KEYWORDS` | Release keywords (comma-separated) | `CW-PUSH,ALL-PUSH,PUSH` |
+| `AUTO_UPDATE_AUTH_TOKEN` | GitHub auth token (optional) | `` |
+| `AUTO_UPDATE_INCLUDE_PRERELEASES` | Include pre-releases | `false` |
+| `AUTO_UPDATE_SHUTDOWN_TIMEOUT` | Graceful shutdown timeout in seconds | `120` |
 
 ## Database Schema
 
@@ -152,6 +235,12 @@ Create a `.env` file or copy it from `env_example.txt` and set the following var
 4. **Memory Issues**:
    - Reduce `max_links_per_page`
    - Lower `max_depth` for shallower crawling
+
+5. **Stuck Queue Items**:
+   - Use `cleanup_stuck_queue.py` to reset stuck items
+   - Reduce `COLLECTION_MAX_ITEMS` to prevent batch reservation issues
+   - Check for crawler crashes or interruptions
+   - Monitor queue statistics regularly
 
 ### Debugging
 
