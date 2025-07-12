@@ -21,7 +21,8 @@ class UGCCleanup:
         # Patterns to match itch.io and github.io subdomains
         self.ugc_patterns = [
             re.compile(r'^[^.]+\.itch\.io$', re.IGNORECASE),
-            re.compile(r'^[^.]+\.github\.io$', re.IGNORECASE)
+            re.compile(r'^[^.]+\.github\.io$', re.IGNORECASE),
+            re.compile(r'^[^.]+\.wordpress\.com$', re.IGNORECASE),
         ]
     
     def is_ugc_subdomain(self, domain):

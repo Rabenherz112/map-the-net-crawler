@@ -107,7 +107,7 @@ class DomainCollector:
             # Common utility paths
             r'/contact', r'/about', r'/privacy', r'/terms', r'/help',
             # Exclude Website UGC subdomains (but not main domains)
-            r'^[^.]+\.itch\.io$', r'^[^.]+\.github\.io$'
+            r'^[^.]+\.itch\.io$', r'^[^.]+\.github\.io$',r'^[^.]+\.wordpress\.com$',
         ]
         
         # Compile regex patterns
