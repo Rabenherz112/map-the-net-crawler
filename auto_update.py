@@ -24,6 +24,11 @@ ORIGINAL_CWD = os.getcwd()
 ORIGINAL_SCRIPT = os.path.abspath(sys.argv[0])
 ORIGINAL_ARGS = sys.argv[1:]
 
+# Create filtered args that exclude --add-seeds for restarts
+def get_restart_args():
+    """Get arguments for restart, excluding --add-seeds"""
+    return [arg for arg in ORIGINAL_ARGS if not arg.startswith('--add-seeds')]
+
 class AutoUpdate:
     """
     AutoUpdate handles checking for, downloading, and applying updates to the data-crawler.
@@ -246,13 +251,14 @@ class AutoUpdate:
 def graceful_restart_callback(args):
     """
     Graceful restart callback that triggers the existing shutdown mechanism
-    instead of immediately terminating the process.
     """
     import signal
     import os
     import threading
     import time
     import atexit
+    import subprocess
+    import sys
     
     # Flag to track if we're in restart mode
     restart_mode = threading.Event()
@@ -268,9 +274,23 @@ def graceful_restart_callback(args):
         
         if restart_mode.is_set():
             print("[AutoUpdate] Graceful shutdown period completed, restarting...")
-            print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={ORIGINAL_ARGS}")
+            restart_args = get_restart_args()
+            print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={restart_args}")
             os.chdir(ORIGINAL_CWD)
-            os.execv(sys.executable, [sys.executable, ORIGINAL_SCRIPT] + ORIGINAL_ARGS)
+            cmd = [sys.executable, ORIGINAL_SCRIPT] + restart_args
+            # Use subprocess to restart in the same terminal session
+            # This preserves the terminal session and shows the script output
+            try:
+                process = subprocess.Popen(cmd, cwd=ORIGINAL_CWD)
+                print(f"[AutoUpdate] Restarted script with PID: {process.pid}")
+                # Exit the current process after a short delay to ensure the new process starts
+                time.sleep(1)
+                os._exit(0)
+                
+            except Exception as e:
+                print(f"[AutoUpdate] Failed to restart script: {e}")
+                # Fallback to execv if subprocess fails
+                os.execv(sys.executable, cmd)
     
     def cleanup_on_exit():
         """Called when the process is about to exit"""
@@ -286,8 +306,8 @@ def graceful_restart_callback(args):
                 db = DatabaseManager()
                 db.connect()
                 
-                # Clean up items stuck in processing for more than 5 minutes
-                cleaned_count = db.cleanup_agent_processing_items(agent_name, timeout_minutes=5)
+                # Clean up items stuck in processing for more than 60 minutes
+                cleaned_count = db.cleanup_agent_processing_items(agent_name, timeout_minutes=60)
                 if cleaned_count > 0:
                     print(f"[AutoUpdate] Cleaned up {cleaned_count} stuck processing items for agent {agent_name}")
                 
@@ -313,9 +333,31 @@ def graceful_restart_callback(args):
 def default_restart_callback(args):
     # Robust restart: use original working directory, script path, and args
     import os
-    print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={ORIGINAL_ARGS}")
+    import subprocess
+    import sys
+    import time
+    
+    restart_args = get_restart_args()
+    print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={restart_args}")
     os.chdir(ORIGINAL_CWD)
-    os.execv(sys.executable, [sys.executable, ORIGINAL_SCRIPT] + ORIGINAL_ARGS)
+    
+    # Build the command to restart the script
+    cmd = [sys.executable, ORIGINAL_SCRIPT] + restart_args
+    
+    # Use subprocess to restart in the same terminal session
+    try:
+        # Start the new process
+        process = subprocess.Popen(cmd, cwd=ORIGINAL_CWD)
+        print(f"[AutoUpdate] Restarted script with PID: {process.pid}")
+        
+        # Exit the current process after a short delay to ensure the new process starts
+        time.sleep(1)
+        os._exit(0)  # Force exit without running atexit handlers
+        
+    except Exception as e:
+        print(f"[AutoUpdate] Failed to restart script: {e}")
+        # Fallback to execv if subprocess fails
+        os.execv(sys.executable, cmd)
 
 def get_project_root():
     # Since this is now an extra repo for the crawler, just use the current directory
