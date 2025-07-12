@@ -712,15 +712,29 @@ class DomainCollector:
             
             # Get nameservers with better error handling
             try:
-                # Try to get nameservers for the domain
+                # First try to get nameservers for the domain itself
                 nameservers = dns.resolver.resolve(domain_name, 'NS')
                 data['nameservers'] = json.dumps([str(ns) for ns in nameservers])
+                logger.info(f"Found nameservers for {domain_name}: {data['nameservers']}")
+                    
             except dns.resolver.NXDOMAIN:
                 logger.warning(f"Domain {domain_name} does not exist")
                 data['nameservers'] = None
             except dns.resolver.NoAnswer:
-                logger.warning(f"No nameserver records found for {domain_name}")
-                data['nameservers'] = None
+                # For sub-domains, try to get nameservers from parent domain
+                main_domain = self._get_main_domain(domain_name)
+                if main_domain != domain_name:
+                    try:
+                        logger.info(f"No NS records for {domain_name}, trying parent domain {main_domain}")
+                        nameservers = dns.resolver.resolve(main_domain, 'NS')
+                        data['nameservers'] = json.dumps([str(ns) for ns in nameservers])
+                        logger.info(f"Found nameservers from parent domain {main_domain}: {data['nameservers']}")
+                    except Exception as parent_e:
+                        logger.warning(f"Error getting nameservers from parent domain {main_domain}: {parent_e}")
+                        data['nameservers'] = None
+                else:
+                    logger.warning(f"No nameserver records found for {domain_name}")
+                    data['nameservers'] = None
             except dns.resolver.Timeout:
                 logger.warning(f"DNS timeout for {domain_name}")
                 data['nameservers'] = None

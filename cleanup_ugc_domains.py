@@ -166,22 +166,25 @@ class UGCCleanup:
         # Show some examples
         if ugc_domains:
             logger.info("Example UGC domains found:")
-            for domain in ugc_domains[:5]:  # Show first 5
+            for domain in ugc_domains[:5]:
                 logger.info(f"  - {domain['domain_name']} (ID: {domain['id']})")
             if len(ugc_domains) > 5:
                 logger.info(f"  ... and {len(ugc_domains) - 5} more")
         
         if ugc_queue_items:
             logger.info("Example UGC queue items found:")
-            for item in ugc_queue_items[:5]:  # Show first 5
+            for item in ugc_queue_items[:5]:
                 logger.info(f"  - {item['domain_name']} (ID: {item['id']})")
             if len(ugc_queue_items) > 5:
                 logger.info(f"  ... and {len(ugc_queue_items) - 5} more")
         
         if ugc_relationships:
             logger.info("Example UGC relationships found:")
-            for rel in ugc_relationships[:5]:  # Show first 5
-                logger.info(f"  - {rel['source']} -> {rel['target']} (ID: {rel['id']})")
+            for rel in ugc_relationships[:5]:
+                # fall back to whichever keys exist
+                src = rel.get('source') or rel.get('source_domain')
+                tgt = rel.get('target') or rel.get('target_domain')
+                logger.info(f"  - {src} -> {tgt} (ID: {rel['id']})")
             if len(ugc_relationships) > 5:
                 logger.info(f"  ... and {len(ugc_relationships) - 5} more")
         
