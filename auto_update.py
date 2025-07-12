@@ -242,8 +242,74 @@ class AutoUpdate:
         # Flush logs, cleanup, etc. if needed
         self.restart_callback(args)
 
-# Example restart callback
+# Graceful restart callback that uses existing shutdown mechanism
+def graceful_restart_callback(args):
+    """
+    Graceful restart callback that triggers the existing shutdown mechanism
+    instead of immediately terminating the process.
+    """
+    import signal
+    import os
+    import threading
+    import time
+    import atexit
+    
+    # Flag to track if we're in restart mode
+    restart_mode = threading.Event()
+    
+    def restart_after_shutdown():
+        """Restart the process after shutdown completes"""
+        # Wait for shutdown to complete with a configurable timeout
+        # Default: 120 seconds (2 minutes) for very long operations
+        shutdown_timeout = int(os.getenv('AUTO_UPDATE_SHUTDOWN_TIMEOUT', '120'))
+        print(f"[AutoUpdate] Waiting {shutdown_timeout} seconds for graceful shutdown...")
+        
+        time.sleep(shutdown_timeout)
+        
+        if restart_mode.is_set():
+            print("[AutoUpdate] Graceful shutdown period completed, restarting...")
+            print(f"[AutoUpdate] Restarting: cwd={ORIGINAL_CWD}, script={ORIGINAL_SCRIPT}, args={ORIGINAL_ARGS}")
+            os.chdir(ORIGINAL_CWD)
+            os.execv(sys.executable, [sys.executable, ORIGINAL_SCRIPT] + ORIGINAL_ARGS)
+    
+    def cleanup_on_exit():
+        """Called when the process is about to exit"""
+        if restart_mode.is_set():
+            print("[AutoUpdate] Process exiting, restart will be handled by background thread")
+            
+            # Clean up any stuck processing items for this agent
+            try:
+                from database import DatabaseManager
+                from config import COLLECTION_CONFIG
+                
+                agent_name = COLLECTION_CONFIG.get('internal_agent_name', 'unknown')
+                db = DatabaseManager()
+                db.connect()
+                
+                # Clean up items stuck in processing for more than 5 minutes
+                cleaned_count = db.cleanup_agent_processing_items(agent_name, timeout_minutes=5)
+                if cleaned_count > 0:
+                    print(f"[AutoUpdate] Cleaned up {cleaned_count} stuck processing items for agent {agent_name}")
+                
+                db.close()
+            except Exception as e:
+                print(f"[AutoUpdate] Error during cleanup: {e}")
+    
+    # Register cleanup function
+    atexit.register(cleanup_on_exit)
+    
+    # Set restart mode flag
+    restart_mode.set()
+    
+    # Send SIGINT to trigger graceful shutdown (same as Ctrl+C)
+    print("[AutoUpdate] Triggering graceful shutdown for restart...")
+    os.kill(os.getpid(), signal.SIGINT)
+    
+    # Start restart thread with configurable timeout
+    restart_thread = threading.Thread(target=restart_after_shutdown, daemon=True)
+    restart_thread.start()
 
+# Original restart callback (kept for backward compatibility)
 def default_restart_callback(args):
     # Robust restart: use original working directory, script path, and args
     import os
