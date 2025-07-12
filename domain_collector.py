@@ -18,7 +18,7 @@ from datetime import datetime, date
 import json
 import geoip2.database
 from version import __version__
-from auto_update import AutoUpdate, default_restart_callback
+from auto_update import AutoUpdate, graceful_restart_callback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1261,7 +1261,9 @@ class DomainCollector:
         
         logger.info(f"Added {added_count} URLs to queue, skipped {skipped_count} duplicates/limits")
     
-    def process_queue(self, max_items=50, max_depth=3, shutdown_check=None):
+    def process_queue(self, max_items=None, max_depth=3, shutdown_check=None):
+        if max_items is None:
+            max_items = COLLECTION_CONFIG['max_items']
         """Process URLs from the discovery queue with enhanced safeguards and shutdown support"""
         logger.info("Starting queue processing...")
         
@@ -1472,7 +1474,7 @@ class DomainCollector:
 def main():
     print(f"Data Crawler Version: {__version__}")
     # Start auto-update checker
-    auto_updater = AutoUpdate(AUTO_UPDATE_CONFIG, __version__, default_restart_callback)
+    auto_updater = AutoUpdate(AUTO_UPDATE_CONFIG, __version__, graceful_restart_callback)
     auto_updater.start_periodic_check()
 
     collector = DomainCollector()

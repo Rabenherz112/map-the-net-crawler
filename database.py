@@ -1,6 +1,7 @@
 import mysql.connector
 from mysql.connector import Error
 import logging
+from datetime import datetime, timedelta
 from config import DB_CONFIG
 
 logging.basicConfig(level=logging.INFO)
@@ -458,6 +459,56 @@ class DatabaseManager:
         except Error as e:
             logger.error(f"Error getting queue stats: {e}")
             return {}
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def cleanup_agent_processing_items(self, agent_name, timeout_minutes=30):
+        """
+        Clean up processing items that belong to a specific agent and are stuck for too long.
+        This helps when agents crash or are restarted without proper cleanup.
+        """
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            
+            # Find items stuck in processing status for this agent
+            timeout_seconds = timeout_minutes * 60
+            cutoff_time = datetime.now() - timedelta(seconds=timeout_seconds)
+            
+            query = """
+                SELECT id, url, domain_name, processed_at
+                FROM discovery_queue 
+                WHERE status = 'processing' 
+                AND processed_at < %s
+                ORDER BY processed_at ASC
+            """
+            
+            cursor.execute(query, (cutoff_time,))
+            stuck_items = cursor.fetchall()
+            
+            if not stuck_items:
+                logger.info(f"No items found stuck in processing for more than {timeout_minutes} minutes")
+                return 0
+            
+            # Reset stuck items to pending status
+            stuck_ids = [str(item['id']) for item in stuck_items]
+            update_query = f"""
+                UPDATE discovery_queue 
+                SET status = 'pending', 
+                    processed_at = NULL, 
+                    error_message = 'Reset from stuck processing status (agent: {agent_name})'
+                WHERE id IN ({','.join(stuck_ids)})
+            """
+            
+            cursor.execute(update_query)
+            self.connection.commit()
+            
+            logger.info(f"Cleaned up {len(stuck_items)} stuck processing items for agent {agent_name}")
+            return len(stuck_items)
+            
+        except Error as e:
+            logger.error(f"Error cleaning up agent processing items: {e}")
+            return 0
         finally:
             if cursor:
                 cursor.close()

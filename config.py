@@ -20,6 +20,7 @@ COLLECTION_CONFIG = {
     'max_links_per_page': int(os.getenv('COLLECTION_MAX_LINKS_PER_PAGE', 50)),
     'max_urls_per_domain': int(os.getenv('COLLECTION_MAX_URLS_PER_DOMAIN', 10)),
     'max_depth': int(os.getenv('COLLECTION_MAX_DEPTH', 3)),  # Maximum crawl depth
+    'max_items': int(os.getenv('COLLECTION_MAX_ITEMS', 10)),  # Maximum items to process per batch
     'skip_already_processed': os.getenv('COLLECTION_SKIP_ALREADY_PROCESSED', 'True').lower() == 'true',
     'http_user_agent': os.getenv('COLLECTION_HTTP_USER_AGENT', 'WorldMapper/1.0 (compatible)'),
     'internal_agent_name': os.getenv('COLLECTION_INTERNAL_AGENT_NAME', f"{os.uname().nodename}-{os.getpid()}"),

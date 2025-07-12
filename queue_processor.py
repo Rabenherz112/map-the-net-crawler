@@ -6,7 +6,7 @@ import sys
 from domain_collector import DomainCollector
 from config import COLLECTION_CONFIG, AUTO_UPDATE_CONFIG
 from version import __version__
-from auto_update import AutoUpdate, default_restart_callback
+from auto_update import AutoUpdate, graceful_restart_callback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,8 +33,10 @@ class QueueProcessor:
         
         self.shutdown_requested = True
     
-    def run(self, max_items=50, max_depth=None, continuous=False):
+    def run(self, max_items=None, max_depth=None, continuous=False):
         """Run the queue processor"""
+        if max_items is None:
+            max_items = COLLECTION_CONFIG['max_items']
         if max_depth is None:
             max_depth = COLLECTION_CONFIG['max_depth']
         
@@ -97,13 +99,13 @@ class QueueProcessor:
 
 
 def main():
-    print(f"Data Crawler Version: {__version__}")
+    print(f"[WebtheNet] Data Crawler Version: {__version__}")
     # Start auto-update checker
-    auto_updater = AutoUpdate(AUTO_UPDATE_CONFIG, __version__, default_restart_callback)
+    auto_updater = AutoUpdate(AUTO_UPDATE_CONFIG, __version__, graceful_restart_callback)
     auto_updater.start_periodic_check()
 
     parser = argparse.ArgumentParser(description='Process domain discovery queue')
-    parser.add_argument('--max-items', type=int, default=50, help='Maximum items to process per batch')
+    parser.add_argument('--max-items', type=int, default=COLLECTION_CONFIG['max_items'], help='Maximum items to process per batch')
     parser.add_argument('--max-depth', type=int, default=COLLECTION_CONFIG['max_depth'], help='Maximum crawl depth')
     parser.add_argument('--continuous', action='store_true', help='Run continuously')
     parser.add_argument('--add-seeds', nargs='+', help='Add seed domains to queue')

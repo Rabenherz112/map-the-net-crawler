@@ -8,7 +8,7 @@ import logging
 from database import DatabaseManager
 from version import __version__
 from config import AUTO_UPDATE_CONFIG
-from auto_update import AutoUpdate, default_restart_callback
+from auto_update import AutoUpdate, graceful_restart_callback
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -97,9 +97,9 @@ def confirm_wipe():
     return response.lower() in ['yes', 'y']
 
 if __name__ == "__main__":
-    print(f"Data Crawler Version: {__version__}")
+    print(f"[WebtheNet] Data Crawler Version: {__version__}")
     # Start auto-update checker
-    auto_updater = AutoUpdate(AUTO_UPDATE_CONFIG, __version__, default_restart_callback)
+    auto_updater = AutoUpdate(AUTO_UPDATE_CONFIG, __version__, graceful_restart_callback)
     auto_updater.start_periodic_check()
     if len(sys.argv) > 1 and sys.argv[1] == "--force":
         # Skip confirmation if --force flag is used
