@@ -91,7 +91,8 @@ class ParallelQueueProcessor:
                                     domain_name, 
                                     depth=depth, 
                                     url=domain_data.get('url'),
-                                    shutdown_check=shutdown_check
+                                    shutdown_check=shutdown_check,
+                                    write_discoveries=write_discoveries
                                 )
                                 result_queue.put(result)
                             except Exception as e:
@@ -136,10 +137,10 @@ class ParallelQueueProcessor:
                     if write_discoveries and relationships:
                         discovered_urls = []
                         for rel in relationships:
-                            if rel.get('target_domain_name'):
+                            if rel.get('target'):
                                 discovered_urls.append({
-                                    'url': rel.get('target_url', f"http://{rel['target_domain_name']}"),
-                                    'domain_name': rel['target_domain_name'],
+                                    'url': rel.get('link_url', f"http://{rel['target']}"),
+                                    'domain_name': rel['target'],
                                     'source_domain_id': domain_id,
                                     'depth': depth + 1
                                 })

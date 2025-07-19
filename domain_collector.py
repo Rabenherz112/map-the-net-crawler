@@ -235,7 +235,7 @@ class DomainCollector:
         """Check if scraping is allowed for the given domain and path using robots.txt logic."""
         return self._check_robots_txt(domain_name, path)
     
-    def collect_domain_data(self, domain_name, depth=0, url=None, shutdown_check=None):
+    def collect_domain_data(self, domain_name, depth=0, url=None, shutdown_check=None, write_discoveries=True):
         """Collect comprehensive data for a domain"""
         start_time = time.time()
         # Ensure url is always defined
@@ -268,7 +268,7 @@ class DomainCollector:
                 relationships, discovered_urls = self._collect_relationships_and_discover(domain_name, domain_id, shutdown_check)
                 
                 # Add discovered URLs to queue for future processing
-                if discovered_urls:
+                if write_discoveries and discovered_urls:
                     self.add_discovered_urls_to_queue(discovered_urls, depth + 1)
                 
                 processing_time = time.time() - start_time
@@ -518,7 +518,7 @@ class DomainCollector:
             relationships, discovered_urls = self._collect_relationships_and_discover(domain_name, domain_id, shutdown_check)
             
             # Add discovered URLs to queue for future processing
-            if discovered_urls:
+            if write_discoveries and discovered_urls:
                 self.add_discovered_urls_to_queue(discovered_urls, depth + 1)
             
             processing_time = time.time() - start_time
@@ -1403,7 +1403,7 @@ class DomainCollector:
                             continue
                         
                         # Collect domain data
-                        domain_id, relationships = self.collect_domain_data(domain_name, depth, url, shutdown_check)
+                        domain_id, relationships = self.collect_domain_data(domain_name, depth, url, shutdown_check, write_discoveries=True)
                         
                         # Mark as completed
                         self.db.mark_queue_item_completed(item['id'], success=True)
@@ -1452,7 +1452,7 @@ class DomainCollector:
             
             try:
                 logger.info(f"Crawling {domain} at depth {depth}")
-                domain_id, relationships = self.collect_domain_data(domain, depth)
+                domain_id, relationships = self.collect_domain_data(domain, depth, write_discoveries=True)
                 
                 # Add new domains to visit if not at max depth
                 if depth < max_depth:

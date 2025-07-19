@@ -1,7 +1,7 @@
 import mysql.connector
 from mysql.connector import Error
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from config import DB_CONFIG
 
 logging.basicConfig(level=logging.INFO)
@@ -126,11 +126,13 @@ class DatabaseManager:
                     id INT AUTO_INCREMENT PRIMARY KEY,
                     domain_name VARCHAR(255),
                     status ENUM('pending', 'processing', 'completed', 'failed') DEFAULT 'pending',
+                    url VARCHAR(1024),
                     error_message TEXT,
                     collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     processing_time DECIMAL(10, 3),
                     relationships_found INT DEFAULT 0,
                     urls_discovered INT DEFAULT 0,
+                    agent_name VARCHAR(100),
                     INDEX idx_status (status),
                     INDEX idx_collected_at (collected_at)
                 )
@@ -170,6 +172,24 @@ class DatabaseManager:
         """Insert or update domain information"""
         try:
             cursor = self.connection.cursor()
+
+            # Normalize date fields to ensure MySQL DATE compatibility
+            def normalize_date(val):
+                if val is None:
+                    return None
+                if isinstance(val, date) and not isinstance(val, datetime):
+                    return val
+                if isinstance(val, datetime):
+                    return val.date()
+                if isinstance(val, str):
+                    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d-%b-%Y"):
+                        try:
+                            return datetime.strptime(val, fmt).date()
+                        except ValueError:
+                            continue
+                return None
+            domain_data['created_date'] = normalize_date(domain_data.get('created_date'))
+            domain_data['expiry_date'] = normalize_date(domain_data.get('expiry_date'))
             
             query = """
                 INSERT INTO domains (
@@ -233,7 +253,7 @@ class DatabaseManager:
                 domain_id = cursor.lastrowid
             
             self.connection.commit()
-            logger.info(f"Domain {domain_data.get('domain_name')} inserted/updated with ID: {domain_id}")
+            logger.debug(f"Domain {domain_data.get('domain_name')} inserted/updated with ID: {domain_id}")
             return domain_id
             
         except Error as e:
@@ -259,13 +279,25 @@ class DatabaseManager:
                     link_url = VALUES(link_url)
             """
             
-            cursor.execute(query, (
+            params = (
                 source_domain_id,
                 target_domain_id,
                 relationship_data.get('type', 'link'),
                 relationship_data.get('link_text'),
                 relationship_data.get('link_url')
-            ))
+            )
+            
+            cursor.execute(query, params)
+            
+            # Check if this was an insert or update
+            if cursor.rowcount == 1:
+                logger.debug(f"Inserted new relationship: {source_domain_id} -> {target_domain_id} ({relationship_data.get('type', 'link')})")
+            elif cursor.rowcount == 2:
+                logger.debug(f"Updated existing relationship: {source_domain_id} -> {target_domain_id} ({relationship_data.get('type', 'link')})")
+            elif cursor.rowcount == 0:
+                logger.debug(f"Relationship already exists and is unchanged: {source_domain_id} -> {target_domain_id} ({relationship_data.get('type', 'link')})")
+            else:
+                logger.warning(f"Unexpected rowcount {cursor.rowcount} for relationship insert")
             
             self.connection.commit()
             
@@ -530,7 +562,9 @@ class DatabaseManager:
         """Update collection log with URL and agent information"""
         try:
             cursor = self.connection.cursor()
-            
+
+            processing_time = round(float(processing_time), 3) if processing_time else None
+
             query = """
                 INSERT INTO collection_logs (
                     domain_name, status, error_message, processing_time, relationships_found, urls_discovered, url, agent_name
