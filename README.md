@@ -351,3 +351,58 @@ The crawler can automatically check for updates and apply them, with options to 
 - Supports git, release, and file-based deployments.
 
 See `src/data-crawler/auto_update.py` for implementation details.
+
+## Run as a Service
+
+To run the crawler as a service, you can create a systemd service file:
+
+```bash
+nano /etc/systemd/system/map-the-net.service
+```
+
+Add the following content to the file:
+
+> Note: Adjust paths and user/group as necessary.
+
+```ini
+[Unit]
+Description=Map-the-Net Crawler Queue Processor
+After=network.target
+
+[Service]
+# Run as your 'python' user
+User=python
+Group=python
+
+# Directory where your project lives
+WorkingDirectory=/home/python/map-the-net-crawler
+
+# Use the venv’s Python to run the script
+ExecStart=/home/python/map-the-net-crawler/.venv/bin/python \
+  /home/python/map-the-net-crawler/queue_processor.py
+
+# Restart on failure
+Restart=on-failure
+RestartSec=60
+
+# Capture stdout/stderr in journal
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+After creating the service file, you can start and enable the service with the following commands:
+
+```bash
+systemctl daemon-reload
+systemctl enable map-the-net-crawler.service
+systemctl start map-the-net-crawler.service
+```
+
+To view the service logs, you can use:
+
+```bash
+journalctl -u map-the-net-crawler.service -f
+```
