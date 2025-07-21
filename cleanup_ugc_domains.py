@@ -24,6 +24,7 @@ class UGCCleanup:
             re.compile(r'^[^.]+\.github\.io$', re.IGNORECASE),
             re.compile(r'^[^.]+\.wordpress\.com$', re.IGNORECASE),
             re.compile(r'^[^.]+\.fandom\.com$', re.IGNORECASE),
+            re.compile(r'^[^.]+\.blogspot\.com$', re.IGNORECASE),
         ]
     
     def is_ugc_subdomain(self, domain):
