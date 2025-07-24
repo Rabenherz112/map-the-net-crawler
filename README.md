@@ -357,7 +357,7 @@ See `src/data-crawler/auto_update.py` for implementation details.
 To run the crawler as a service, you can create a systemd service file:
 
 ```bash
-nano /etc/systemd/system/map-the-net.service
+nano /etc/systemd/system/map-the-net-crawler.service
 ```
 
 Add the following content to the file:
