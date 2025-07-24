@@ -397,12 +397,12 @@ After creating the service file, you can start and enable the service with the f
 
 ```bash
 systemctl daemon-reload
-systemctl enable map-the-net-crawler.service
-systemctl start map-the-net-crawler.service
+systemctl enable map-the-net.service
+systemctl start map-the-net.service
 ```
 
 To view the service logs, you can use:
 
 ```bash
-journalctl -u map-the-net-crawler.service -f
+journalctl -u map-the-net.service -f
 ```
