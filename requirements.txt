@@ -10,6 +10,6 @@ urllib3==2.5.0
 lxml==6.0.0
 selenium==4.34.2
 webdriver-manager==4.0.2
-Pillow==11.3.0
+Pillow==12.1.1
 geopy==2.4.1
 geoip2==5.1.0
